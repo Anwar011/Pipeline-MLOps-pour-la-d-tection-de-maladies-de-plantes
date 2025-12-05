@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: plant-disease-api-service
+  namespace: mlops
+  labels:
+    app: plant-disease-api
+spec:
+  selector:
+    app: plant-disease-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  type: LoadBalancer  # Utiliser LoadBalancer pour exposer extérieurement
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plant-disease-api-service-cluster
+  namespace: mlops
+  labels:
+    app: plant-disease-api
+spec:
+  selector:
+    app: plant-disease-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP  # Pour la communication interne

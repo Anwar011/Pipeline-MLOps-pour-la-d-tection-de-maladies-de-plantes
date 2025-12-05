@@ -1,0 +1,62 @@
+# Configuration du pipeline MLOps pour la détection de maladies de plantes
+
+# Dataset configuration
+data:
+  source: "PlantVillage"  # Dataset source
+  path: "data/raw"        # Chemin des données brutes
+  processed_path: "data/processed"  # Chemin des données traitées
+  train_split: 0.7        # Proportion pour l'entraînement
+  val_split: 0.2          # Proportion pour la validation
+  test_split: 0.1         # Proportion pour le test
+  image_size: [224, 224]  # Taille des images
+  batch_size: 32          # Taille des batches
+  num_workers: 4          # Nombre de workers pour le dataloader
+
+# Model configuration
+model:
+  architecture: "resnet50"  # Architecture du modèle (resnet50, vit, efficientnet)
+  num_classes: 38          # Nombre de classes (PlantVillage dataset)
+  pretrained: true         # Utiliser des poids pré-entraînés
+  freeze_backbone: false   # Geler le backbone pendant l'entraînement
+
+# Training configuration
+training:
+  epochs: 50               # Nombre d'époques
+  learning_rate: 0.001     # Taux d'apprentissage
+  weight_decay: 1e-4       # Décroissance des poids
+  optimizer: "adam"        # Optimiseur
+  scheduler: "cosine"      # Scheduler de taux d'apprentissage
+  early_stopping_patience: 10  # Patience pour l'arrêt précoce
+  save_best_only: true     # Sauvegarder seulement le meilleur modèle
+  checkpoint_path: "models/checkpoints"  # Chemin des checkpoints
+
+# MLflow configuration
+mlflow:
+  experiment_name: "plant_disease_detection"  # Nom de l'expérience
+  tracking_uri: "http://localhost:5000"       # URI du serveur MLflow
+  model_registry: "models:/plant_disease_model"  # Registry des modèles
+
+# API configuration
+api:
+  host: "0.0.0.0"          # Host de l'API
+  port: 8000               # Port de l'API
+  model_path: "models/production"  # Chemin du modèle en production
+  max_batch_size: 16       # Taille maximale des batches pour l'inférence
+
+# Docker configuration
+docker:
+  image_name: "plant-disease-mlops"  # Nom de l'image Docker
+  tag: "latest"           # Tag de l'image
+
+# Kubernetes configuration
+kubernetes:
+  namespace: "mlops"       # Namespace Kubernetes
+  deployment_name: "plant-disease-api"  # Nom du déploiement
+  replicas: 3             # Nombre de replicas
+  service_name: "plant-disease-service"  # Nom du service
+
+# Monitoring configuration
+monitoring:
+  prometheus_port: 9090   # Port Prometheus
+  grafana_port: 3000      # Port Grafana
+  metrics_interval: 30    # Intervalle de collecte des métriques (secondes)

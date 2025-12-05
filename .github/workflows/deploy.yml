@@ -1,0 +1,101 @@
+name: Deploy to Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - staging
+        - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+    - name: Deploy to Kubernetes
+      run: |
+        # Appliquer les configurations Kubernetes
+        kubectl apply -f k8s/
+
+        # Attendre que les pods soient prêts
+        kubectl wait --for=condition=available --timeout=300s deployment/plant-disease-api
+
+        # Vérifier le déploiement
+        kubectl get pods
+        kubectl get services
+
+    - name: Run health check
+      run: |
+        # Attendre que le service soit accessible
+        sleep 30
+
+        # Effectuer un health check
+        SERVICE_IP=$(kubectl get svc plant-disease-api -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        echo "Service disponible sur: http://$SERVICE_IP"
+
+        # Tester l'endpoint health
+        curl -f http://$SERVICE_IP/health || exit 1
+
+    - name: Run integration tests
+      run: |
+        # Exécuter des tests d'intégration sur le déploiement
+        pip install requests pytest
+
+        # Tests d'intégration
+        python -c "
+        import requests
+        import sys
+
+        SERVICE_IP = '$SERVICE_IP'
+        try:
+            # Test health endpoint
+            response = requests.get(f'http://$SERVICE_IP/health')
+            assert response.status_code == 200
+
+            # Test classes endpoint
+            response = requests.get(f'http://$SERVICE_IP/classes')
+            assert response.status_code == 200
+
+            print('Tests d\'intégration réussis!')
+        except Exception as e:
+            print(f'Erreur lors des tests: {e}')
+            sys.exit(1)
+        "
+
+    - name: Update deployment status
+      if: success()
+      run: |
+        echo "Déploiement réussi en ${{ github.event.inputs.environment || 'production' }}"
+
+    - name: Rollback on failure
+      if: failure()
+      run: |
+        echo "Échec du déploiement, rollback en cours..."
+        # Implémenter la logique de rollback si nécessaire
