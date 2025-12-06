@@ -6,10 +6,13 @@ Implémente CNN (ResNet, EfficientNet) et Vision Transformer.
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from transformers import ViTModel, ViTConfig
+# Temporarily disable ViT due to transformers compatibility issues
+# from transformers.models.vit.modeling_vit import ViTModel
+# from transformers.models.vit.configuration_vit import ViTConfig
 import pytorch_lightning as pl
 from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
+from torchmetrics import Accuracy
 import yaml
 import logging
 from pathlib import Path
@@ -41,9 +44,9 @@ class PlantDiseaseCNN(pl.LightningModule):
         self.criterion = nn.CrossEntropyLoss()
 
         # Métriques
-        self.train_accuracy = pl.metrics.Accuracy(task="multiclass", num_classes=self.num_classes)
-        self.val_accuracy = pl.metrics.Accuracy(task="multiclass", num_classes=self.num_classes)
-        self.test_accuracy = pl.metrics.Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.train_accuracy = Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.val_accuracy = Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.test_accuracy = Accuracy(task="multiclass", num_classes=self.num_classes)
 
     def _create_backbone(self):
         """Créer le backbone CNN selon la configuration."""
@@ -115,7 +118,7 @@ class PlantDiseaseCNN(pl.LightningModule):
         # Métriques
         self.val_accuracy(y_hat, y)
         self.log('val_loss', loss, prog_bar=True)
-        self.log('val_acc', self.val_accuracy, prog_bar=True)
+        self.log('val_acc', self.val_accuracy.compute(), prog_bar=True)
 
         return loss
 
@@ -179,12 +182,13 @@ class PlantDiseaseViT(pl.LightningModule):
         self.training_config = config['training']
         self.num_classes = self.model_config['num_classes']
 
-        # Configuration ViT
-        self.vit_config = ViTConfig.from_pretrained('google/vit-base-patch16-224')
-        self.vit_config.num_labels = self.num_classes
+        # Configuration ViT - Temporarily disabled due to transformers compatibility issues
+        # self.vit_config = ViTConfig.from_pretrained('google/vit-base-patch16-224')
+        # self.vit_config.num_labels = self.num_classes
 
-        # Créer le modèle ViT
-        self.vit = ViTModel.from_pretrained('google/vit-base-patch16-224', config=self.vit_config)
+        # Créer le modèle ViT - Temporarily disabled
+        # self.vit = ViTModel.from_pretrained('google/vit-base-patch16-224', config=self.vit_config)
+        raise NotImplementedError("ViT model temporarily disabled due to transformers compatibility issues")
         self.classifier = nn.Linear(self.vit_config.hidden_size, self.num_classes)
 
         # Geler le backbone si configuré
@@ -196,9 +200,9 @@ class PlantDiseaseViT(pl.LightningModule):
         self.criterion = nn.CrossEntropyLoss()
 
         # Métriques
-        self.train_accuracy = pl.metrics.Accuracy(task="multiclass", num_classes=self.num_classes)
-        self.val_accuracy = pl.metrics.Accuracy(task="multiclass", num_classes=self.num_classes)
-        self.test_accuracy = pl.metrics.Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.train_accuracy = Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.val_accuracy = Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.test_accuracy = Accuracy(task="multiclass", num_classes=self.num_classes)
 
     def forward(self, x):
         """Forward pass."""
@@ -225,7 +229,7 @@ class PlantDiseaseViT(pl.LightningModule):
 
         self.val_accuracy(y_hat, y)
         self.log('val_loss', loss, prog_bar=True)
-        self.log('val_acc', self.val_accuracy, prog_bar=True)
+        self.log('val_acc', self.val_accuracy.compute(), prog_bar=True)
 
         return loss
 
@@ -276,7 +280,7 @@ def create_model(model_type="cnn", config_path="config.yaml"):
     if model_type.lower() == 'cnn':
         return PlantDiseaseCNN(config_path)
     elif model_type.lower() == 'vit':
-        return PlantDiseaseViT(config_path)
+        raise NotImplementedError("ViT model temporarily disabled due to transformers compatibility issues")
     else:
         raise ValueError(f"Type de modèle {model_type} non supporté")
 
@@ -289,7 +293,6 @@ class ModelCheckpointCallback(pl.callbacks.ModelCheckpoint):
             monitor='val_acc',
             mode='max',
             save_top_k=1,
-            filename='{epoch}-{val_acc:.2f}',
             **kwargs
         )
 
@@ -316,10 +319,7 @@ def get_training_callbacks(config_path="config.yaml"):
     callbacks = [
         ModelCheckpointCallback(
             dirpath=checkpoint_path,
-            filename='{epoch}-{val_acc:.2f}',
-            monitor='val_acc',
-            mode='max',
-            save_top_k=1
+            filename='{epoch}-{val_acc:.2f}'
         ),
         EarlyStoppingCallback(
             patience=training_config['early_stopping_patience']

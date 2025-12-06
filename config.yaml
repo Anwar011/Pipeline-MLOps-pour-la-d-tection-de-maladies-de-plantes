@@ -15,13 +15,13 @@ data:
 # Model configuration
 model:
   architecture: "resnet50"  # Architecture du modèle (resnet50, vit, efficientnet)
-  num_classes: 38          # Nombre de classes (PlantVillage dataset)
+  num_classes: 15          # Nombre de classes (PlantVillage dataset partiel)
   pretrained: true         # Utiliser des poids pré-entraînés
   freeze_backbone: false   # Geler le backbone pendant l'entraînement
 
 # Training configuration
 training:
-  epochs: 50               # Nombre d'époques
+  epochs: 5               # Nombre d'époques (réduit pour les tests)
   learning_rate: 0.001     # Taux d'apprentissage
   weight_decay: 1e-4       # Décroissance des poids
   optimizer: "adam"        # Optimiseur
@@ -33,14 +33,14 @@ training:
 # MLflow configuration
 mlflow:
   experiment_name: "plant_disease_detection"  # Nom de l'expérience
-  tracking_uri: "http://localhost:5000"       # URI du serveur MLflow
+  tracking_uri: "sqlite:///experiments/mlflow.db"  # Base de données locale
   model_registry: "models:/plant_disease_model"  # Registry des modèles
 
 # API configuration
 api:
   host: "0.0.0.0"          # Host de l'API
   port: 8000               # Port de l'API
-  model_path: "models/production"  # Chemin du modèle en production
+  model_path: "models/production/model.ckpt"  # Chemin du modèle en production
   max_batch_size: 16       # Taille maximale des batches pour l'inférence
 
 # Docker configuration
