@@ -1,4 +1,4 @@
-# Pipeline MLOps pour la Détection de Maladies de Plantes
+# Pipeline MLOps pour la Détection de Maladies de Plantes.
 
 [![CI](https://github.com/your-username/plant-disease-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/plant-disease-mlops/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://docker.com)
