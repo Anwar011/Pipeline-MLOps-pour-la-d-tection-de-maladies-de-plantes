@@ -20,6 +20,17 @@ Ce projet implémente un pipeline MLOps de bout en bout pour la classification a
 - **Déploiement automatisé** avec Kubernetes et GitHub Actions
 - **Monitoring** avec Grafana et Prometheus
 
+## 📚 Documentation Complète
+
+Une documentation exhaustive est disponible dans le répertoire [`docs/`](docs/):
+
+- **[🚀 Quick Start Guide](docs/quick_start_guide.md)** - Démarrage en 5 minutes (Docker, local, Kubernetes)
+- **[🎯 Repository Walkthrough](docs/walkthrough.md)** - Parcours guidé de tout le système
+- **[🌱 Comprehensive Analysis](docs/comprehensive_analysis.md)** - Référence technique complète (architecture, déploiement, monitoring)
+- **[🔬 Technical Deep Dive](docs/technical_deep_dive.md)** - Sujets avancés et optimisations
+
+👉 **Nouveau dans le projet ?** Commencez par le [Quick Start Guide](docs/quick_start_guide.md)
+
 ## 📁 Structure du projet
 
 ```
