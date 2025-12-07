@@ -7,8 +7,15 @@ rule_files:
   # - "second_rules.yml"
 
 scrape_configs:
-  # API de détection de maladies de plantes
+  # Plant Disease API (running on host machine)
   - job_name: 'plant-disease-api'
+    static_configs:
+      - targets: ['host.docker.internal:8000']  # Access host from Docker
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    
+  # API de détection de maladies de plantes (Kubernetes)
+  - job_name: 'plant-disease-api-k8s'
     static_configs:
       - targets: ['plant-disease-api-service.mlops.svc.cluster.local:9090']
     scrape_interval: 5s

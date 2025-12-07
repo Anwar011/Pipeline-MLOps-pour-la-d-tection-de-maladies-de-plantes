@@ -23,7 +23,7 @@ model:
 training:
   epochs: 5               # Nombre d'époques (réduit pour les tests)
   learning_rate: 0.001     # Taux d'apprentissage
-  weight_decay: 1e-4       # Décroissance des poids
+  weight_decay: 0.0001       # Décroissance des poids
   optimizer: "adam"        # Optimiseur
   scheduler: "cosine"      # Scheduler de taux d'apprentissage
   early_stopping_patience: 10  # Patience pour l'arrêt précoce
@@ -33,7 +33,7 @@ training:
 # MLflow configuration
 mlflow:
   experiment_name: "plant_disease_detection"  # Nom de l'expérience
-  tracking_uri: "sqlite:///experiments/mlflow.db"  # Base de données locale
+  tracking_uri: "http://localhost:5000"  # Serveur MLflow
   model_registry: "models:/plant_disease_model"  # Registry des modèles
 
 # API configuration

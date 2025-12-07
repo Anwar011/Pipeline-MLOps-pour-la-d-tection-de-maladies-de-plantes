@@ -63,6 +63,7 @@ venv.bak/
 # MLflow
 mlruns/
 mlartifacts/
+experiments/
 
 # DVC
 .dvc/tmp/

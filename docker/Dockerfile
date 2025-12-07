@@ -1,20 +1,14 @@
-# Utiliser une image de base avec CUDA support si GPU disponible
-FROM nvidia/cuda:11.8-runtime-ubuntu20.04
+# Utiliser une image Python standard (GPU optionnel)
+FROM python:3.10-slim
 
 # Éviter les interactions pendant l'installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Installer les dépendances système
 RUN apt-get update && apt-get install -y \
-    python3.9 \
-    python3.9-dev \
-    python3-pip \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Créer un lien symbolique pour python
-RUN ln -s /usr/bin/python3.9 /usr/bin/python
 
 # Définir le répertoire de travail
 WORKDIR /app
