@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: api
-        image: anwar/plant-disease-mlops:latest
+        image: anwar011/plant-disease-mlops:latest
         ports:
         - containerPort: 8000
           name: http
@@ -27,17 +27,17 @@ spec:
           name: metrics
         env:
         - name: CUDA_VISIBLE_DEVICES
-          value: "0"
+          value: "-1"  # Disable GPU for now
         - name: PYTHONPATH
           value: "/app"
         resources:
           requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
             memory: "2Gi"
             cpu: "1000m"
-          limits:
-            memory: "4Gi"
-            cpu: "2000m"
-            nvidia.com/gpu: 1  # Si GPU disponible
+            # nvidia.com/gpu: 1  # Si GPU disponible
         livenessProbe:
           httpGet:
             path: /health
@@ -69,9 +69,9 @@ spec:
         persistentVolumeClaim:
           claimName: data-pvc
       # Utiliser un node avec GPU si disponible
-      nodeSelector:
-        accelerator: nvidia-tesla-k80  # Adapter selon votre configuration
-      tolerations:
-      - key: nvidia.com/gpu
-        operator: Exists
-        effect: NoSchedule
+      # nodeSelector:
+      #   accelerator: nvidia-tesla-k80  # Adapter selon votre configuration
+      # tolerations:
+      # - key: nvidia.com/gpu
+      #   operator: Exists
+      #   effect: NoSchedule

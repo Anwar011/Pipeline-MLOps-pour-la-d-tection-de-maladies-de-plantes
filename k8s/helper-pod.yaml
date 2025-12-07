@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: helper-pod
+  namespace: mlops
+spec:
+  containers:
+  - name: helper
+    image: busybox
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: model-storage
+      mountPath: /models
+    - name: data-storage
+      mountPath: /data
+  volumes:
+  - name: model-storage
+    persistentVolumeClaim:
+      claimName: model-pvc
+  - name: data-storage
+    persistentVolumeClaim:
+      claimName: data-pvc
