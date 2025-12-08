@@ -31,7 +31,7 @@ jobs:
     - name: Build and Push Inference Image
       run: |
         # Build using the local Docker daemon
-        docker build . --file docker/Dockerfile.inference --tag ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}
+        docker build -f docker/Dockerfile.inference -t ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }} .
         docker push ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}
 
     - name: Connect to AKS
