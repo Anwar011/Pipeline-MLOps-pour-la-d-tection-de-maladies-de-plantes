@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plant-disease-api
+  namespace: mlops
+  labels:
+    app: plant-disease-api
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plant-disease-api
+  template:
+    metadata:
+      labels:
+        app: plant-disease-api
+        version: v1
+    spec:
+      containers:
+      - name: api
+        image: python:3.10-slim
+        command: ["/bin/bash"]
+        args: 
+        - "-c"
+        - |
+          pip install fastapi uvicorn
+          cat > /app.py << 'EOF'
+          from fastapi import FastAPI
+          
+          app = FastAPI(title="Plant Disease Detection API", version="1.0.0")
+          
+          @app.get("/")
+          def root():
+              return {"message": "Plant Disease Detection API", "status": "running"}
+          
+          @app.get("/health")
+          def health():
+              return {"status": "ok"}
+              
+          @app.get("/predict")  
+          def predict():
+              return {"prediction": "healthy", "confidence": 0.95, "message": "Demo endpoint"}
+          EOF
+          uvicorn app:app --host 0.0.0.0 --port 8000
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: PYTHONPATH
+          value: "/"
+        resources:
+          requests:
+            memory: "512Mi" 
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3

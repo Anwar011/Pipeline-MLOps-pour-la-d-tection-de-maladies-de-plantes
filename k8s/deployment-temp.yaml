@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plant-disease-api
+  namespace: mlops
+  labels:
+    app: plant-disease-api
+    version: v1
+spec:
+  replicas: 1  # Start with 1 replica for testing
+  selector:
+    matchLabels:
+      app: plant-disease-api
+  template:
+    metadata:
+      labels:
+        app: plant-disease-api
+        version: v1
+    spec:
+      containers:
+      - name: api
+        image: python:3.10-slim  # Use base image temporarily
+        command: ["/bin/sh"]
+        args: ["-c", "pip install fastapi uvicorn && cat > app.py << 'EOF'\nfrom fastapi import FastAPI\napp = FastAPI()\n@app.get(\"/health\")\ndef health():\n    return {\"status\": \"ok\"}\nEOF\n&& uvicorn app:app --host 0.0.0.0 --port 8000"]
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: PYTHONPATH
+          value: "/app"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
