@@ -25,10 +25,13 @@ jobs:
       run: |
         az acr login --name ${{ secrets.ACR_USERNAME }}
 
+    - name: Verify Azure Login
+      run: az account show
+
     - name: Build and Push Inference Image
       run: |
         # Build using the local Docker daemon
-        docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }} -f docker/Dockerfile.inference .
+        docker build . --file docker/Dockerfile.inference --tag ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}
         docker push ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}
 
     - name: Connect to AKS
