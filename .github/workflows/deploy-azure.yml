@@ -13,34 +13,27 @@ on:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # Runs on your laptop (which is already logged in via 'az login')
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Login to ACR
-      uses: azure/docker-login@v1
-      with:
-        login-server: ${{ secrets.ACR_LOGIN_SERVER }}
-        username: ${{ secrets.ACR_USERNAME }}
-        password: ${{ secrets.ACR_PASSWORD }}
+    # No need for azure/login action because your laptop is already authenticated!
+    
+    - name: Login to ACR (Local)
+      run: |
+        az acr login --name ${{ secrets.ACR_USERNAME }}
 
     - name: Build and Push Inference Image
       run: |
+        # Build using the local Docker daemon
         docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }} -f docker/Dockerfile.inference .
         docker push ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}
 
-    - name: Set AKS Context
-      uses: azure/aks-set-context@v3
-      with:
-        resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
-        cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+    - name: Connect to AKS
+      run: |
+        az aks get-credentials --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }} --overwrite-existing
 
     - name: Deploy to AKS
       run: |
