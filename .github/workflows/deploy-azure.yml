@@ -30,16 +30,18 @@ jobs:
 
     - name: Build and Push Inference Image
       run: |
-        # Debug: Print variables (secrets are masked but we can see if they are empty)
-        echo "Building image for registry: ${{ secrets.ACR_LOGIN_SERVER }}"
+        # Sanitize the secret (remove whitespace/newlines)
+        ACR_SERVER=$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | tr -d '[:space:]')
         
-        # Build using explicit command
+        echo "Building image for registry: $ACR_SERVER"
+        
+        # Build using explicit command with sanitized variable
         docker image build \
           --file docker/Dockerfile.inference \
-          --tag "${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}" \
+          --tag "$ACR_SERVER/plant-disease-api:${{ github.sha }}" \
           .
         
-        docker push "${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}"
+        docker push "$ACR_SERVER/plant-disease-api:${{ github.sha }}"
 
     - name: Connect to AKS
       run: |
@@ -47,8 +49,11 @@ jobs:
 
     - name: Deploy to AKS
       run: |
+        # Sanitize the secret again for the sed command
+        ACR_SERVER=$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | tr -d '[:space:]')
+        
         # Update image in deployment manifest
-        sed -i "s|image: .*|image: ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}|g" k8s/deployment.yaml
+        sed -i "s|image: .*|image: $ACR_SERVER/plant-disease-api:${{ github.sha }}|g" k8s/deployment.yaml
         
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/deployment.yaml
