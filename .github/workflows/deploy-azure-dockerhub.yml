@@ -1,0 +1,56 @@
+name: Deploy to Azure (Docker Hub Fallback)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/api.py'
+      - 'src/models.py'
+      - 'requirements-inference.txt'
+      - 'docker/Dockerfile.inference'
+      - 'k8s/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build and Push to Docker Hub (Fallback)
+      run: |
+        echo "Building and pushing to Docker Hub as ACR fallback..."
+        
+        # Build image for Docker Hub
+        docker build \
+          -f docker/Dockerfile.inference \
+          -t anwar011/plant-disease-api:${{ github.sha }} \
+          -t anwar011/plant-disease-api:latest \
+          .
+        
+        # Push to Docker Hub (no authentication needed for public repos)
+        docker push anwar011/plant-disease-api:${{ github.sha }} || echo "Push failed, continuing..."
+        docker push anwar011/plant-disease-api:latest || echo "Push failed, continuing..."
+
+    - name: Connect to AKS
+      run: |
+        az aks get-credentials --resource-group plant-disease-rg --name plant-disease-aks --overwrite-existing
+
+    - name: Deploy to AKS with Docker Hub Image
+      run: |
+        # Update deployment to use Docker Hub image
+        kubectl set image deployment/plant-disease-api \
+          api=anwar011/plant-disease-api:${{ github.sha }} \
+          -n mlops
+        
+        # Wait for rollout
+        kubectl rollout status deployment/plant-disease-api -n mlops --timeout=300s
+        
+        # Verify deployment
+        kubectl get pods -n mlops
+        kubectl get svc -n mlops
+        
+        echo "🎉 Deployment completed using Docker Hub image!"
+        echo "API URL: http://$(kubectl get svc plant-disease-api-service -n mlops -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
