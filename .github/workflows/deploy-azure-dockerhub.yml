@@ -19,20 +19,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build and Push to Docker Hub (Fallback)
+    - name: Build and Push to Docker Hub
       run: |
-        echo "Building and pushing to Docker Hub as ACR fallback..."
+        echo "Building for Docker Hub (matching your deployment.yaml)..."
         
-        # Build image for Docker Hub
+        # Build the SAME image name as in deployment.yaml
         docker build \
           -f docker/Dockerfile.inference \
-          -t anwar011/plant-disease-api:${{ github.sha }} \
-          -t anwar011/plant-disease-api:latest \
+          -t anwar011/plant-disease-mlops:${{ github.sha }} \
+          -t anwar011/plant-disease-mlops:latest \
           .
         
-        # Push to Docker Hub (no authentication needed for public repos)
-        docker push anwar011/plant-disease-api:${{ github.sha }} || echo "Push failed, continuing..."
-        docker push anwar011/plant-disease-api:latest || echo "Push failed, continuing..."
+        # Push to Docker Hub (you already have this repo)
+        docker push anwar011/plant-disease-mlops:${{ github.sha }} || echo "Push failed, continuing..."
+        docker push anwar011/plant-disease-mlops:latest || echo "Push successful!"
 
     - name: Connect to AKS
       run: |
@@ -40,9 +40,9 @@ jobs:
 
     - name: Deploy to AKS with Docker Hub Image
       run: |
-        # Update deployment to use Docker Hub image
+        # Update deployment (force pod restart with new image)
         kubectl set image deployment/plant-disease-api \
-          api=anwar011/plant-disease-api:${{ github.sha }} \
+          api=anwar011/plant-disease-mlops:${{ github.sha }} \
           -n mlops
         
         # Wait for rollout
