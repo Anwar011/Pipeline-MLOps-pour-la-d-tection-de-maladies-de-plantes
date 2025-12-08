@@ -21,13 +21,16 @@ jobs:
 
     # No need for azure/login action because your laptop is already authenticated!
     
-    - name: Login to ACR (Direct)
+    - name: Login to ACR (via Azure CLI)
       run: |
-        # Sanitize server name
+        # Sanitize server name (remove whitespace/newlines)
         ACR_SERVER=$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | tr -d '[:space:]')
         
-        # Login using docker directly (faster/reliable)
-        echo "${{ secrets.ACR_PASSWORD }}" | docker login $ACR_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
+        # Use az acr login with the clean name
+        # We extract just the name part if it's a full URL (e.g. foo.azurecr.io -> foo)
+        ACR_NAME=$(echo $ACR_SERVER | cut -d'.' -f1)
+        
+        az acr login --name $ACR_NAME
 
     - name: Verify Azure Login
       run: az account show
