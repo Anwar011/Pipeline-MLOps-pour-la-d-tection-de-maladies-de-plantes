@@ -303,7 +303,7 @@ isort src/ --check
 
 Ce projet est sous licence MIT - voir le fichier [LICENSE](LICENSE) pour plus de détails.
 
-## 🙏 Remerciements
+## 🙏 Remerciements.
 
 - Dataset PlantVillage (Kaggle)
 - PyTorch Lightning team

@@ -1,0 +1,70 @@
+name: Fast Deploy (No Docker Build)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ 'src/**' ]
+
+jobs:
+  deploy-fast:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy Updated Source Code (No Build)
+      run: |
+        echo "🚀 Fast deployment without Docker build..."
+        
+        # Create ConfigMap with your source code
+        kubectl create configmap plant-disease-src \
+          --from-file=src/ \
+          --dry-run=client -o yaml | kubectl apply -f - -n mlops
+        
+        # Update deployment to mount the source code
+        kubectl patch deployment plant-disease-api -n mlops --patch '
+        {
+          "spec": {
+            "template": {
+              "spec": {
+                "volumes": [
+                  {
+                    "name": "source-code",
+                    "configMap": {
+                      "name": "plant-disease-src"
+                    }
+                  }
+                ],
+                "containers": [
+                  {
+                    "name": "api",
+                    "image": "tiangolo/uvicorn-gunicorn-fastapi:python3.9",
+                    "volumeMounts": [
+                      {
+                        "name": "source-code",
+                        "mountPath": "/app"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }'
+        
+        # Wait for rollout
+        kubectl rollout status deployment/plant-disease-api -n mlops --timeout=120s
+        
+        echo "✅ Fast deployment complete!"
+        kubectl get pods -n mlops
+        
+    - name: Test Deployment
+      run: |
+        echo "🧪 Testing deployment..."
+        sleep 10
+        API_URL="http://$(kubectl get svc plant-disease-api-service -n mlops -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
+        curl -s "$API_URL" || echo "API not ready yet"
+        echo ""
+        echo "🎉 Deployment URL: $API_URL"
