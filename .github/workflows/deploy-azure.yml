@@ -21,9 +21,13 @@ jobs:
 
     # No need for azure/login action because your laptop is already authenticated!
     
-    - name: Login to ACR (Local)
+    - name: Login to ACR (Direct)
       run: |
-        az acr login --name ${{ secrets.ACR_USERNAME }}
+        # Sanitize server name
+        ACR_SERVER=$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | tr -d '[:space:]')
+        
+        # Login using docker directly (faster/reliable)
+        echo "${{ secrets.ACR_PASSWORD }}" | docker login $ACR_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
     - name: Verify Azure Login
       run: az account show
