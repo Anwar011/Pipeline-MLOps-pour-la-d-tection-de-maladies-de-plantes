@@ -1,0 +1,69 @@
+name: Deploy to Azure (Fixed)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/api.py'
+      - 'src/models.py'
+      - 'requirements-inference.txt'
+      - 'docker/Dockerfile.inference'
+      - 'k8s/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to ACR
+      run: |
+        # Use service principal authentication
+        az acr login --name plantdiseaseacr1674
+
+    - name: Build and Push Inference Image
+      run: |
+        echo "Building image for ACR..."
+        
+        # Build with multiple tags
+        docker build \
+          -f docker/Dockerfile.inference \
+          -t plantdiseaseacr1674.azurecr.io/plant-disease-api:${{ github.sha }} \
+          -t plantdiseaseacr1674.azurecr.io/plant-disease-api:latest \
+          .
+        
+        # Push both tags
+        docker push plantdiseaseacr1674.azurecr.io/plant-disease-api:${{ github.sha }}
+        docker push plantdiseaseacr1674.azurecr.io/plant-disease-api:latest
+
+    - name: Connect to AKS
+      run: |
+        az aks get-credentials \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --name ${{ secrets.AKS_CLUSTER_NAME }} \
+          --overwrite-existing
+
+    - name: Deploy to AKS
+      run: |
+        # Update deployment image
+        kubectl set image deployment/plant-disease-api \
+          api=plantdiseaseacr1674.azurecr.io/plant-disease-api:${{ github.sha }} \
+          -n mlops
+        
+        # Wait for rollout
+        kubectl rollout status deployment/plant-disease-api -n mlops --timeout=300s
+        
+        # Verify deployment
+        kubectl get pods -n mlops
+        kubectl get svc -n mlops

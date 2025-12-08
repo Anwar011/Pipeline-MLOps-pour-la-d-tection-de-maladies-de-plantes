@@ -13,46 +13,48 @@ on:
 
 jobs:
   build-and-deploy:
-    runs-on: self-hosted  # Runs on your laptop (which is already logged in via 'az login')
+    runs-on: self-hosted  # Back to self-hosted runner on your laptop
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # No need for azure/login action because your laptop is already authenticated!
+    # Your laptop is already authenticated via 'az login'
     
-    - name: Login to ACR
-      run: az acr login --name plantdiseaseacr1674
+    - name: Login to ACR (retry with token fallback)
+      run: |
+        # Try direct login first
+        if ! az acr login --name plantdiseaseacr1674; then
+          echo "Direct ACR login failed, trying token method..."
+          TOKEN=$(az acr login --name plantdiseaseacr1674 --expose-token --output tsv --query accessToken)
+          echo $TOKEN | docker login plantdiseaseacr1674.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin
+        fi
 
     - name: Verify Azure Login
       run: az account show
 
     - name: Build and Push Inference Image
       run: |
-        # Sanitize the secret (remove whitespace/newlines)
-        ACR_SERVER=$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | tr -d '[:space:]')
-        
-        echo "Building image for registry: $ACR_SERVER"
+        echo "Building image for ACR: plantdiseaseacr1674.azurecr.io"
         
         # Build using explicit command with sanitized variable
-        docker image build \
-          --file docker/Dockerfile.inference \
-          --tag "$ACR_SERVER/plant-disease-api:${{ github.sha }}" \
+        docker build \
+          -f docker/Dockerfile.inference \
+          -t plantdiseaseacr1674.azurecr.io/plant-disease-api:${{ github.sha }} \
+          -t plantdiseaseacr1674.azurecr.io/plant-disease-api:latest \
           .
         
-        docker push "$ACR_SERVER/plant-disease-api:${{ github.sha }}"
+        docker push plantdiseaseacr1674.azurecr.io/plant-disease-api:${{ github.sha }}
+        docker push plantdiseaseacr1674.azurecr.io/plant-disease-api:latest
 
     - name: Connect to AKS
       run: |
-        az aks get-credentials --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }} --overwrite-existing
+        az aks get-credentials --resource-group plant-disease-rg --name plant-disease-aks --overwrite-existing
 
     - name: Deploy to AKS
       run: |
-        # Sanitize the secret again for the sed command
-        ACR_SERVER=$(echo "${{ secrets.ACR_LOGIN_SERVER }}" | tr -d '[:space:]')
-        
         # Update image in deployment manifest
-        sed -i "s|image: .*|image: $ACR_SERVER/plant-disease-api:${{ github.sha }}|g" k8s/deployment.yaml
+        sed -i "s|image: .*|image: plantdiseaseacr1674.azurecr.io/plant-disease-api:${{ github.sha }}|g" k8s/deployment.yaml
         
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/deployment.yaml
