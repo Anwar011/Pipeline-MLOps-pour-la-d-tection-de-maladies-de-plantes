@@ -1,0 +1,52 @@
+name: Deploy to Azure
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/api.py'
+      - 'src/models.py'
+      - 'requirements-inference.txt'
+      - 'docker/Dockerfile.inference'
+      - 'k8s/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Login to ACR
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Build and Push Inference Image
+      run: |
+        docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }} -f docker/Dockerfile.inference .
+        docker push ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}
+
+    - name: Set AKS Context
+      uses: azure/aks-set-context@v3
+      with:
+        resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+
+    - name: Deploy to AKS
+      run: |
+        # Update image in deployment manifest
+        sed -i "s|image: .*|image: ${{ secrets.ACR_LOGIN_SERVER }}/plant-disease-api:${{ github.sha }}|g" k8s/deployment.yaml
+        
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml

@@ -1,0 +1,35 @@
+# Training Image
+FROM python:3.10-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements-train.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY src/ ./src/
+COPY config.yaml .
+# Copy data scripts if needed
+COPY scripts/ ./scripts/
+# Copy tests
+COPY tests/ ./tests/
+
+# Create directories
+RUN mkdir -p data models logs experiments mlruns
+
+# Environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Default command (can be overridden)
+CMD ["python", "src/train.py"]

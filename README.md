@@ -38,7 +38,8 @@ plant-disease-mlops/
 ├── config.yaml              # Configuration principale
 ├── requirements.txt         # Dépendances Python
 ├── docker/
-│   ├── Dockerfile          # Image Docker pour l'API
+│   ├── Dockerfile.train    # Image pour l'entraînement (GPU)
+│   ├── Dockerfile.inference # Image optimisée pour la prod (CPU)
 │   └── docker-compose.yml  # Services locaux
 ├── k8s/                    # Configurations Kubernetes
 │   ├── deployment.yaml
@@ -246,14 +247,26 @@ kubectl get pods -n mlops
 kubectl logs -f deployment/plant-disease-api -n mlops
 ```
 
-### CI/CD
+### CI/CD & Automation
 
-Le projet inclut des workflows GitHub Actions pour :
+Le projet inclut des workflows GitHub Actions avancés :
 
-- **Tests automatisés** sur chaque push/PR
-- **Build et push** d'images Docker
-- **Déploiement** en staging/production
-- **Tests d'intégration** post-déploiement
+#### 1. Pipeline CI/CD (`ci.yml`)
+- **Tests automatisés** sur chaque push/PR.
+- **Build et push** de l'image Docker.
+- **Déploiement** en staging (si branche `develop`).
+
+#### 2. Entraînement Automatisé (`training.yml`)
+Permet d'entraîner le modèle sur votre propre machine (Self-Hosted Runner) :
+- **Déclenchement :** Automatique (push sur `data/`) ou Manuel.
+- **Action :** Lance l'entraînement GPU dans un conteneur Docker.
+- **Setup :** `Settings > Actions > Runners > New self-hosted runner`.
+
+#### 3. Déploiement Azure (`deploy-azure.yml`)
+Déploie l'API sur Azure Kubernetes Service (AKS) :
+- **Déclenchement :** Push sur `main`.
+- **Action :** Build image prod -> Push ACR -> Deploy AKS.
+- **Requis :** Secrets Azure configurés.
 
 ## 📚 Développement
 
