@@ -1,6 +1,7 @@
 # Core ML libraries (Inference only)
-torch>=2.0.0 --index-url https://download.pytorch.org/whl/cpu
-torchvision>=0.15.0 --index-url https://download.pytorch.org/whl/cpu
+# Core ML libraries (Inference only)
+# Torch installed explicitly in Dockerfile for CPU optimization
+transformers>=4.21.0
 transformers>=4.21.0
 
 # API and web
