@@ -107,30 +107,26 @@ jobs:
 
       - name: 📦 Install DVC
         run: |
-          pip install dvc dvc-s3 dvc-gdrive  # Add your remote type
+          pip install dvc dvc-gdrive  # Add your remote type
           dvc version
 
-      - name: 🔑 Configure DVC Remote
+      - name: 🔑 Configure DVC Remote (Google Drive)
+        if: ${{ secrets.GDRIVE_CREDENTIALS != '' }}
         run: |
-          # Configure DVC remote credentials
-          # For S3:
-          # dvc remote modify --local myremote access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
-          # dvc remote modify --local myremote secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          
-          # For Google Drive:
-          # echo '${{ secrets.GDRIVE_CREDENTIALS }}' > /tmp/gdrive-creds.json
-          # dvc remote modify --local myremote gdrive_service_account_json_file_path /tmp/gdrive-creds.json
-          
-          echo "DVC remote configured"
+          echo '${{ secrets.GDRIVE_CREDENTIALS }}' > /tmp/gdrive-creds.json
+          dvc remote modify --local storage gdrive_use_service_account true
+          dvc remote modify --local storage gdrive_service_account_json_file_path /tmp/gdrive-creds.json
 
-      - name: 📥 Pull Data
+      - name: 📥 Pull Data from DVC
         run: |
           echo "Pulling data from DVC remote..."
-          dvc pull -v || echo "No remote configured, using local data"
+          dvc pull -v
           
           # Verify data
           echo "Data structure:"
-          ls -la data/ || echo "Data directory not found"
+          ls -la data/
+          ls -la data/raw/ || true
+          ls -la data/raw/PlantVillage/ || true
 
       - name: 📤 Upload Data Artifact
         uses: actions/upload-artifact@v4

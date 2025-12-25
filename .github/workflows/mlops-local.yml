@@ -39,60 +39,34 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 🐍 Setup Python Environment
-        shell: powershell
         run: |
-          Write-Host "Python version:"
           python --version
-          Write-Host "Installing dependencies..."
           pip install -r requirements-train.txt
 
       - name: 🚀 Start MLflow Server
-        shell: powershell
         run: |
-          Write-Host "Starting MLflow and monitoring services..."
           cd docker
           docker-compose up -d mlflow-server
-          
-          # Wait for MLflow to be ready
-          Write-Host "Waiting for MLflow server to start..."
-          Start-Sleep -Seconds 10
-          
-          # Verify MLflow is running
+          timeout /t 10 /nobreak
           docker-compose ps
-          
-          Write-Host "✅ MLflow server ready at http://localhost:5000"
+          echo MLflow server ready at http://localhost:5000
 
       - name: 🧠 Run Training
         id: train
-        shell: powershell
         run: |
-          Write-Host "🚀 Starting training on local machine..."
-          
-          # Verify data exists
-          Write-Host "Checking data..."
-          Get-ChildItem data/raw/PlantVillage | Select-Object -First 5
-          
-          # Create directories
-          New-Item -ItemType Directory -Force -Path models/production | Out-Null
-          New-Item -ItemType Directory -Force -Path mlruns | Out-Null
-          New-Item -ItemType Directory -Force -Path metrics | Out-Null
-          New-Item -ItemType Directory -Force -Path plots | Out-Null
-          
-          # Set environment
-          $env:PYTHONPATH = $PWD
-          $env:MLFLOW_TRACKING_URI = "http://localhost:5000"
-          
-          # Run training
-          Write-Host "Starting training with model: ${{ env.MODEL_TYPE }}"
-          Write-Host "MLflow tracking at: http://localhost:5000"
+          echo Starting training on local machine...
+          dir data\raw\PlantVillage
+          if not exist models\production mkdir models\production
+          if not exist mlruns mkdir mlruns
+          if not exist metrics mkdir metrics
+          if not exist plots mkdir plots
+          set PYTHONPATH=%CD%
+          set MLFLOW_TRACKING_URI=http://localhost:5000
           python src/train.py --model ${{ env.MODEL_TYPE }} --dataset data/raw/PlantVillage --config config.yaml
-          
-          # Generate model version
-          $MODEL_VERSION = "v" + (Get-Date -Format "yyyyMMddHHmmss")
-          Write-Host "model_version=$MODEL_VERSION" >> $env:GITHUB_OUTPUT
-          
-          Write-Host "✅ Training complete! Model version: $MODEL_VERSION"
-          Write-Host "📊 View results at http://localhost:5000"
+          for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (set mydate=%%c%%a%%b)
+          for /f "tokens=1-2 delims=/: " %%a in ('time /t') do (set mytime=%%a%%b)
+          echo model_version=v%mydate%%mytime% >> %GITHUB_OUTPUT%
+          echo Training complete!
 
       - name: 📤 Upload Model
         uses: actions/upload-artifact@v4
