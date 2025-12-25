@@ -29,9 +29,6 @@ jobs:
   train-wsl:
     name: 🧠 Train Model (WSL)
     runs-on: self-hosted
-    defaults:
-      run:
-        shell: bash
     
     outputs:
       model_version: ${{ steps.train.outputs.model_version }}
@@ -42,29 +39,27 @@ jobs:
 
       - name: 🐍 Setup Python Environment
         run: |
-          python3 --version
-          pip3 install -r requirements-train.txt
+          wsl python3 --version
+          wsl pip3 install -r requirements-train.txt
 
       - name: 🚀 Start MLflow Server
         run: |
           cd docker
-          docker-compose up -d mlflow-server
-          sleep 10
-          docker-compose ps
-          echo "MLflow server ready at http://localhost:5000"
+          wsl docker-compose up -d mlflow-server
+          timeout /t 10 /nobreak
+          wsl docker-compose ps
+          echo MLflow server ready at http://localhost:5000
 
       - name: 🧠 Run Training
         id: train
         run: |
-          echo "Starting training on WSL..."
-          ls -la data/raw/PlantVillage/ | head -5
-          mkdir -p models/production mlruns metrics plots
-          export PYTHONPATH=$(pwd)
-          export MLFLOW_TRACKING_URI="http://localhost:5000"
-          python3 src/train.py --model ${{ env.MODEL_TYPE }} --dataset data/raw/PlantVillage --config config.yaml
-          MODEL_VERSION="v$(date +%Y%m%d%H%M%S)"
-          echo "model_version=$MODEL_VERSION" >> $GITHUB_OUTPUT
-          echo "Training complete! Model: $MODEL_VERSION"
+          echo Starting training on WSL...
+          wsl ls -la data/raw/PlantVillage
+          wsl mkdir -p models/production mlruns metrics plots
+          wsl bash -c "export PYTHONPATH=$(wsl pwd) && export MLFLOW_TRACKING_URI=http://localhost:5000 && python3 src/train.py --model ${{ env.MODEL_TYPE }} --dataset data/raw/PlantVillage --config config.yaml"
+          for /f %%i in ('wsl date +%%Y%%m%%d%%H%%M%%S') do set MODEL_VERSION=v%%i
+          echo model_version=%MODEL_VERSION% >> %GITHUB_OUTPUT%
+          echo Training complete! Model: %MODEL_VERSION%
 
       - name: 📤 Upload Model
         uses: actions/upload-artifact@v4
