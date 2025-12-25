@@ -29,6 +29,9 @@ jobs:
   train-wsl:
     name: 🧠 Train Model (WSL)
     runs-on: self-hosted
+    defaults:
+      run:
+        shell: cmd
     
     outputs:
       model_version: ${{ steps.train.outputs.model_version }}
