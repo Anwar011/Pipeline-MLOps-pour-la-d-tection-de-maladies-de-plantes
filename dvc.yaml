@@ -1,0 +1,109 @@
+# ===========================================
+# DVC Pipeline - Plant Disease Detection MLOps
+# ===========================================
+# Ce fichier définit le pipeline de données et d'entraînement
+# géré par DVC pour assurer la reproductibilité
+
+stages:
+  # Stage 1: Préparation des données
+  prepare_data:
+    cmd: python scripts/prepare_data.py --config config.yaml
+    deps:
+      - scripts/prepare_data.py
+      - config.yaml
+    params:
+      - data.train_split
+      - data.val_split
+      - data.test_split
+      - data.image_size
+    outs:
+      - data/processed/train:
+          cache: true
+      - data/processed/val:
+          cache: true
+      - data/processed/test:
+          cache: true
+    plots:
+      - data/processed/data_statistics.json:
+          cache: false
+
+  # Stage 2: Entraînement du modèle
+  train:
+    cmd: python src/train.py --model cnn --dataset data/processed --config config.yaml
+    deps:
+      - src/train.py
+      - src/models.py
+      - src/data_preprocessing.py
+      - data/processed/train
+      - data/processed/val
+      - config.yaml
+    params:
+      - model.architecture
+      - model.num_classes
+      - model.pretrained
+      - training.epochs
+      - training.learning_rate
+      - training.optimizer
+    outs:
+      - models/checkpoints:
+          cache: true
+    metrics:
+      - metrics/train_metrics.json:
+          cache: false
+    plots:
+      - plots/training_curves.png:
+          cache: false
+      - plots/confusion_matrix.png:
+          cache: false
+
+  # Stage 3: Évaluation du modèle
+  evaluate:
+    cmd: python scripts/evaluate.py --config config.yaml
+    deps:
+      - scripts/evaluate.py
+      - models/checkpoints
+      - data/processed/test
+      - config.yaml
+    metrics:
+      - metrics/evaluation_metrics.json:
+          cache: false
+    plots:
+      - plots/roc_curve.png:
+          cache: false
+      - plots/precision_recall.png:
+          cache: false
+
+  # Stage 4: Export du modèle (ONNX)
+  export_model:
+    cmd: python scripts/export_model.py --config config.yaml
+    deps:
+      - scripts/export_model.py
+      - models/checkpoints
+      - config.yaml
+    outs:
+      - models/production/model.onnx:
+          cache: false
+      - models/production/model.ckpt:
+          cache: false
+
+  # Stage 5: Analyse de drift (optionnel)
+  drift_analysis:
+    cmd: python scripts/drift_analysis.py --config config.yaml
+    deps:
+      - scripts/drift_analysis.py
+      - data/processed/train
+      - data/processed/test
+    plots:
+      - reports/drift_report.html:
+          cache: false
+    always_changed: true
+
+# Paramètres pour le suivi des expériences
+plots:
+  - plots/training_curves.png
+  - plots/confusion_matrix.png
+  - plots/roc_curve.png
+
+metrics:
+  - metrics/train_metrics.json
+  - metrics/evaluation_metrics.json

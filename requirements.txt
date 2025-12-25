@@ -1,20 +1,25 @@
-# Core ML libraries
+# ===========================================
+# MLOps Pipeline - Plant Disease Detection
+# Conforme au cahier des charges PFA
+# ===========================================
+
+# === Deep Learning Framework ===
 torch>=2.0.0
 torchvision>=0.15.0
 transformers>=4.21.0
 pytorch-lightning>=2.0.0
 
-# MLOps tools
+# === MLOps Tools (Cahier des charges) ===
 mlflow>=2.0.0
 dvc>=3.0.0
 dvclive>=2.0.0
 
-# API and web
+# === API and Web (FastAPI - Cahier des charges) ===
 fastapi>=0.100.0
-uvicorn>=0.20.0
+uvicorn[standard]>=0.20.0
 python-multipart>=0.0.5
 
-# Data processing
+# === Data Processing ===
 numpy>=1.21.0
 pandas>=1.5.0
 scikit-learn>=1.2.0
@@ -22,20 +27,40 @@ pillow>=9.0.0
 opencv-python>=4.7.0
 albumentations>=1.3.0
 
-# Monitoring
+# === Monitoring (Prometheus/Grafana - Cahier des charges) ===
 prometheus-client>=0.16.0
-evidently>=0.2.0
+prometheus-fastapi-instrumentator>=6.1.0
 
-# Development
-jupyter>=1.0.0
+# === Drift Detection (Evidently AI - Cahier des charges) ===
+evidently>=0.4.0
+
+# === Model Export (ONNX - Cahier des charges) ===
+onnx>=1.15.0
+onnxruntime>=1.16.0
+
+# === Visualization & Reporting ===
 matplotlib>=3.6.0
 seaborn>=0.12.0
+
+# === Development ===
+jupyter>=1.0.0
 tqdm>=4.64.0
 
-# Testing
+# === Testing (Cahier des charges) ===
 pytest>=7.0.0
 pytest-cov>=4.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0
 
-# Docker and deployment
+# === Code Quality ===
+black>=23.0.0
+flake8>=6.0.0
+isort>=5.12.0
+
+# === Configuration ===
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
+
+# === Docker and Kubernetes ===
 docker>=6.0.0
 kubernetes>=25.0.0

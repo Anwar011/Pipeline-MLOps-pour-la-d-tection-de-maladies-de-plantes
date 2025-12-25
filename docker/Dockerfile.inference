@@ -3,6 +3,17 @@ FROM python:3.10-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Build arguments for versioning
+ARG MODEL_VERSION=latest
+ARG BUILD_DATE
+ARG VCS_REF
+
+# Labels for image metadata
+LABEL org.opencontainers.image.title="Plant Disease API"
+LABEL org.opencontainers.image.version="${MODEL_VERSION}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+
 # Install minimal system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
@@ -19,10 +30,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy ONLY necessary code
 COPY src/api.py src/models.py src/data_preprocessing.py ./src/
+COPY src/__init__.py ./src/
 COPY config.yaml .
+COPY data/class_mapping.json ./data/
+
+# Copy trained model (from CI/CD pipeline)
+COPY models/production/ ./models/production/
 
 # Create directories
-RUN mkdir -p models logs
+RUN mkdir -p models/production logs
+
+# Store model version
+RUN echo "${MODEL_VERSION}" > /app/MODEL_VERSION
 
 # Expose API port
 EXPOSE 8000
@@ -32,6 +51,7 @@ EXPOSE 9090
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV CUDA_VISIBLE_DEVICES=-1
+ENV MODEL_VERSION=${MODEL_VERSION}
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \

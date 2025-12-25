@@ -137,7 +137,7 @@ def train_model(model_type, dataset_path, config_path="config.yaml"):
 
         # Évaluation sur le test set
         logger.info("Évaluation sur le jeu de test...")
-        trainer.test(model, data_loaders["test"])
+        test_results = trainer.test(model, data_loaders["test"])
 
         # Sauvegarder le modèle dans MLflow
         logger.info("Sauvegarde du modèle dans MLflow...")
@@ -151,9 +151,136 @@ def train_model(model_type, dataset_path, config_path="config.yaml"):
             else:
                 mlflow.log_metric(f"final_{metric_name}", metric_value)
 
+        # Générer et logger les graphiques (Cahier des charges)
+        logger.info("Génération des graphiques...")
+        generate_training_plots(model, data_loaders, class_names, config)
+        
+        # Sauvegarder les métriques pour DVC
+        save_metrics_for_dvc(final_metrics, test_results)
+        
+        # Sauvegarder le modèle en production
+        logger.info("Sauvegarde du modèle en production...")
+        save_model_for_production(trainer, model, config)
+        
+        # Enregistrer le modèle dans le Model Registry (Cahier des charges)
+        logger.info("Enregistrement dans MLflow Model Registry...")
+        try:
+            mlflow.pytorch.log_model(
+                model, 
+                "model",
+                registered_model_name="plant_disease_model"
+            )
+        except Exception as e:
+            logger.warning(f"Impossible d'enregistrer dans le registry: {e}")
+
         logger.info("Entraînement terminé avec succès!")
 
         return model, trainer
+
+
+def save_model_for_production(trainer, model, config):
+    """Sauvegarder le meilleur modèle pour la production."""
+    from pathlib import Path
+    import shutil
+    
+    production_dir = Path("models/production")
+    production_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Trouver le meilleur checkpoint
+    checkpoint_dir = Path(config["training"]["checkpoint_path"])
+    checkpoints = list(checkpoint_dir.glob("*.ckpt"))
+    
+    if checkpoints:
+        # Prendre le checkpoint le plus récent (meilleur)
+        best_checkpoint = max(checkpoints, key=lambda x: x.stat().st_mtime)
+        dest_path = production_dir / "model.ckpt"
+        shutil.copy(best_checkpoint, dest_path)
+        logger.info(f"✅ Modèle de production sauvegardé: {dest_path}")
+        
+        # Sauvegarder aussi les métadonnées
+        metadata = {
+            "model_type": config["model"]["architecture"],
+            "num_classes": config["model"]["num_classes"],
+            "image_size": config["data"]["image_size"],
+            "checkpoint_source": str(best_checkpoint),
+        }
+        
+        import json
+        with open(production_dir / "model_metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+        
+        logger.info(f"✅ Métadonnées sauvegardées: {production_dir / 'model_metadata.json'}")
+    else:
+        logger.warning("⚠️ Aucun checkpoint trouvé pour la production")
+
+
+def generate_training_plots(model, data_loaders, class_names, config):
+    """Générer les graphiques conformes au cahier des charges."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+    from pathlib import Path
+    
+    plots_dir = Path("plots")
+    plots_dir.mkdir(exist_ok=True)
+    
+    # Évaluer sur le test set pour la matrice de confusion
+    model.eval()
+    all_preds = []
+    all_labels = []
+    
+    device = next(model.parameters()).device
+    
+    with torch.no_grad():
+        for batch in data_loaders["test"]:
+            images, labels = batch
+            images = images.to(device)
+            outputs = model(images)
+            _, preds = torch.max(outputs, 1)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.numpy())
+    
+    # Matrice de confusion
+    cm = confusion_matrix(all_labels, all_preds)
+    fig, ax = plt.subplots(figsize=(12, 10))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
+    disp.plot(ax=ax, cmap='Blues', xticks_rotation=45)
+    plt.title("Matrice de Confusion")
+    plt.tight_layout()
+    cm_path = plots_dir / "confusion_matrix.png"
+    plt.savefig(cm_path, dpi=150)
+    plt.close()
+    
+    # Logger dans MLflow
+    mlflow.log_artifact(str(cm_path))
+    logger.info(f"Matrice de confusion sauvegardée: {cm_path}")
+
+
+def save_metrics_for_dvc(final_metrics, test_results):
+    """Sauvegarder les métriques pour le suivi DVC."""
+    import json
+    from pathlib import Path
+    
+    metrics_dir = Path("metrics")
+    metrics_dir.mkdir(exist_ok=True)
+    
+    metrics = {}
+    for name, value in final_metrics.items():
+        if isinstance(value, torch.Tensor):
+            metrics[name] = float(value.item())
+        else:
+            metrics[name] = float(value)
+    
+    # Ajouter les résultats de test
+    if test_results:
+        for result in test_results:
+            for k, v in result.items():
+                metrics[f"test_{k}"] = float(v)
+    
+    with open(metrics_dir / "train_metrics.json", "w") as f:
+        json.dump(metrics, f, indent=2)
+    
+    logger.info(f"Métriques sauvegardées pour DVC: metrics/train_metrics.json")
 
 
 def main():

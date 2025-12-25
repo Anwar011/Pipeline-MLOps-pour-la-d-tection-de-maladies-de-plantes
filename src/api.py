@@ -1,5 +1,6 @@
 """
 API d'inférence pour la détection de maladies de plantes utilisant FastAPI.
+Conforme au cahier des charges: API REST avec monitoring Prometheus.
 """
 
 import base64
@@ -8,8 +9,9 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import prometheus_client
@@ -17,12 +19,19 @@ import torch
 import torch.nn as nn
 import uvicorn
 import yaml
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from PIL import Image
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import Counter, Gauge, Histogram, Info
 from torchvision import transforms
+
+# Import prometheus-fastapi-instrumentator pour monitoring automatique
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    INSTRUMENTATOR_AVAILABLE = True
+except ImportError:
+    INSTRUMENTATOR_AVAILABLE = False
 
 from models import create_model
 
@@ -123,6 +132,26 @@ class PlantDiseaseInferenceAPI:
         )
 
         self.active_requests = Gauge("api_active_requests", "Number of active requests")
+        
+        # Métriques additionnelles pour le cahier des charges
+        self.model_info = Info("model_info", "Information about the loaded model")
+        self.model_info.info({
+            "architecture": self.model_config.get("architecture", "unknown"),
+            "num_classes": str(len(self.class_mapping)),
+            "version": "1.0.0"
+        })
+        
+        self.inference_latency = Histogram(
+            "inference_latency_seconds",
+            "Model inference latency in seconds",
+            buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0]
+        )
+        
+        self.predictions_by_class = Counter(
+            "predictions_by_class_total",
+            "Total predictions per class",
+            ["class_name"]
+        )
 
     def preprocess_image(self, image_bytes: bytes) -> torch.Tensor:
         """Prétraite une image pour l'inférence."""
@@ -180,6 +209,8 @@ class PlantDiseaseInferenceAPI:
 
             # Logger les métriques
             self.prediction_confidence.observe(confidence)
+            self.inference_latency.observe(inference_time)
+            self.predictions_by_class.labels(class_name=class_name).inc()
 
             inference_time = time.time() - start_time
 
@@ -192,6 +223,7 @@ class PlantDiseaseInferenceAPI:
                     "architecture": self.model_config.get("architecture", "unknown"),
                     "num_classes": len(self.class_mapping),
                 },
+                "timestamp": datetime.now().isoformat()
             }
 
         except Exception as e:
@@ -206,8 +238,24 @@ class PlantDiseaseInferenceAPI:
 # Créer l'application FastAPI
 app = FastAPI(
     title="Plant Disease Detection API",
-    description="API pour la détection automatique de maladies de plantes",
+    description="""
+    ## API MLOps pour la détection automatique de maladies de plantes
+    
+    Cette API fait partie d'un pipeline MLOps complet incluant:
+    - **Entraînement** avec PyTorch Lightning
+    - **Tracking** avec MLflow
+    - **Monitoring** avec Prometheus/Grafana
+    - **Déploiement** avec Docker/Kubernetes
+    
+    ### Endpoints principaux:
+    - `/predict` - Prédiction sur une image
+    - `/predict_batch` - Prédiction sur plusieurs images
+    - `/health` - Vérification de santé
+    - `/metrics` - Métriques Prometheus
+    """,
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # Ajouter CORS
@@ -219,35 +267,93 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialiser l'API d'inférence
-inference_api = PlantDiseaseInferenceAPI()
+# Instrumentator Prometheus automatique (cahier des charges)
+if INSTRUMENTATOR_AVAILABLE:
+    instrumentator = Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        should_respect_env_var=True,
+        should_instrument_requests_inprogress=True,
+        excluded_handlers=["/metrics"],
+        inprogress_name="http_requests_inprogress",
+        inprogress_labels=True,
+    )
+    instrumentator.instrument(app).expose(app, endpoint="/metrics/auto")
+
+# Variable globale pour l'API (initialisée au démarrage)
+inference_api = None
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialisation au démarrage de l'API."""
+    global inference_api
+    try:
+        inference_api = PlantDiseaseInferenceAPI()
+        logger.info("✅ API initialisée avec succès")
+    except Exception as e:
+        logger.error(f"❌ Erreur d'initialisation: {e}")
+        # Créer une API en mode dégradé
+        inference_api = None
 
 
 @app.get("/")
 async def root():
-    """Endpoint racine."""
-    inference_api.requests_total.labels(method="GET", endpoint="/").inc()
+    """Endpoint racine avec informations sur l'API."""
+    if inference_api:
+        inference_api.requests_total.labels(method="GET", endpoint="/").inc()
     return {
-        "message": "API de détection de maladies de plantes",
+        "message": "🌱 API de détection de maladies de plantes",
         "version": "1.0.0",
+        "status": "ready" if inference_api else "degraded",
         "endpoints": {
-            "predict": "/predict (POST)",
-            "health": "/health (GET)",
-            "metrics": "/metrics (GET)",
+            "predict": "/predict (POST) - Prédiction sur une image",
+            "predict_batch": "/predict_batch (POST) - Prédiction sur plusieurs images",
+            "health": "/health (GET) - Vérification de santé",
+            "metrics": "/metrics (GET) - Métriques Prometheus",
+            "classes": "/classes (GET) - Liste des classes",
+            "docs": "/docs (GET) - Documentation Swagger"
         },
+        "timestamp": datetime.now().isoformat()
     }
 
 
 @app.get("/health")
 async def health_check():
-    """Vérification de santé de l'API."""
-    inference_api.requests_total.labels(method="GET", endpoint="/health").inc()
-    return {"status": "healthy", "timestamp": time.time()}
+    """Vérification de santé de l'API (cahier des charges: temps < 2s)."""
+    if inference_api:
+        inference_api.requests_total.labels(method="GET", endpoint="/health").inc()
+    
+    health_status = {
+        "status": "healthy" if inference_api else "degraded",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {
+            "model_loaded": inference_api is not None and inference_api.model is not None,
+            "class_mapping_loaded": inference_api is not None and len(inference_api.class_mapping) > 0,
+        }
+    }
+    
+    if inference_api:
+        health_status["model_info"] = {
+            "architecture": inference_api.model_config.get("architecture", "unknown"),
+            "num_classes": len(inference_api.class_mapping)
+        }
+    
+    return health_status
 
 
 @app.post("/predict")
 async def predict_disease(file: UploadFile = File(...)):
-    """Prédire la maladie d'une plante à partir d'une image."""
+    """
+    Prédire la maladie d'une plante à partir d'une image.
+    
+    Conforme au cahier des charges:
+    - Temps de réponse < 2s
+    - Retourne la prédiction avec confiance
+    """
+    if inference_api is None:
+        raise HTTPException(status_code=503, detail="Service non disponible - modèle non chargé")
+    
     with inference_api.requests_duration.labels(
         method="POST", endpoint="/predict"
     ).time():
@@ -274,6 +380,9 @@ async def predict_disease(file: UploadFile = File(...)):
 @app.post("/predict_batch")
 async def predict_batch(files: List[UploadFile] = File(...)):
     """Prédire les maladies pour un lot d'images."""
+    if inference_api is None:
+        raise HTTPException(status_code=503, detail="Service non disponible")
+    
     with inference_api.requests_duration.labels(
         method="POST", endpoint="/predict_batch"
     ).time():
@@ -298,7 +407,7 @@ async def predict_batch(files: List[UploadFile] = File(...)):
             except Exception as e:
                 results.append({"filename": file.filename, "error": str(e)})
 
-        return {"results": results}
+        return {"results": results, "total": len(results)}
 
 
 from fastapi import Response
@@ -306,7 +415,7 @@ from fastapi import Response
 
 @app.get("/metrics")
 async def metrics():
-    """Exporter les métriques Prometheus."""
+    """Exporter les métriques Prometheus (cahier des charges: monitoring)."""
     return Response(
         content=prometheus_client.generate_latest(), media_type="text/plain"
     )
@@ -315,10 +424,29 @@ async def metrics():
 @app.get("/classes")
 async def get_classes():
     """Obtenir la liste des classes supportées."""
+    if inference_api is None:
+        raise HTTPException(status_code=503, detail="Service non disponible")
+    
     inference_api.requests_total.labels(method="GET", endpoint="/classes").inc()
     return {
         "classes": list(inference_api.class_mapping.values()),
         "num_classes": len(inference_api.class_mapping),
+        "class_mapping": inference_api.class_mapping
+    }
+
+
+@app.get("/model/info")
+async def get_model_info():
+    """Obtenir les informations sur le modèle chargé."""
+    if inference_api is None:
+        raise HTTPException(status_code=503, detail="Service non disponible")
+    
+    return {
+        "architecture": inference_api.model_config.get("architecture", "unknown"),
+        "num_classes": len(inference_api.class_mapping),
+        "image_size": inference_api.config["data"]["image_size"],
+        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "model_path": inference_api.api_config.get("model_path", "unknown")
     }
 
 

@@ -64,18 +64,34 @@ venv.bak/
 mlruns/
 mlartifacts/
 experiments/
+mlflow.db
 
 # DVC
 .dvc/tmp/
 .dvc/cache/
+*.dvc.lock
 
-# Models and data
-models/
+# Models and data (keep .gitkeep files)
+models/**/*.ckpt
+models/**/*.pt
+models/**/*.pth
+models/**/*.onnx
+!models/.gitkeep
+!models/**/.gitkeep
 data/raw/
 data/processed/
 *.h5
 *.pkl
 *.joblib
+
+# Metrics and Plots (generated files)
+metrics/*.json
+!metrics/.gitkeep
+plots/*.png
+!plots/.gitkeep
+reports/*.html
+reports/*.json
+!reports/.gitkeep
 
 # Logs
 logs/

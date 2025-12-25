@@ -1,0 +1,419 @@
+# ===========================================
+# MLOps Data-Driven Pipeline
+# ===========================================
+# Triggered when new data is detected via DVC
+# 1. Detects DVC changes (dvc.lock update)
+# 2. Runs training and logs to MLflow
+# 3. Builds new API image with trained model
+# 4. Deploys to Kubernetes
+
+name: MLOps Data-Driven Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      # Triggered when DVC detects new data
+      - 'dvc.lock'
+      - 'dvc.yaml'
+      - 'data/**/*.dvc'
+      # Or when training code changes
+      - 'src/train.py'
+      - 'src/models.py'
+      - 'src/data_preprocessing.py'
+  workflow_dispatch:
+    inputs:
+      force_training:
+        description: 'Force training even without data changes'
+        required: false
+        default: 'false'
+        type: boolean
+      model_type:
+        description: 'Model type to train'
+        required: false
+        default: 'cnn'
+        type: choice
+        options:
+          - cnn
+          - vit
+
+env:
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_IMAGE_TRAIN: ${{ secrets.DOCKER_USERNAME }}/plant-disease-train
+  DOCKER_IMAGE_API: ${{ secrets.DOCKER_USERNAME }}/plant-disease-api
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+  PYTHON_VERSION: '3.10'
+  MODEL_TYPE: ${{ github.event.inputs.model_type || 'cnn' }}
+
+jobs:
+  # ============================================
+  # Job 1: Check if training is needed
+  # ============================================
+  check-changes:
+    name: 🔍 Check Data Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_train: ${{ steps.check.outputs.should_train }}
+      data_changed: ${{ steps.check.outputs.data_changed }}
+      
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit to compare
+
+      - name: 🔍 Check what changed
+        id: check
+        run: |
+          echo "Checking for DVC/data changes..."
+          
+          # Check if dvc.lock changed (indicates new data)
+          if git diff --name-only HEAD~1 HEAD | grep -E "(dvc\.lock|dvc\.yaml|\.dvc$)"; then
+            echo "✅ DVC changes detected - new data available"
+            echo "data_changed=true" >> $GITHUB_OUTPUT
+            echo "should_train=true" >> $GITHUB_OUTPUT
+          elif git diff --name-only HEAD~1 HEAD | grep -E "(src/train\.py|src/models\.py)"; then
+            echo "✅ Training code changed"
+            echo "data_changed=false" >> $GITHUB_OUTPUT
+            echo "should_train=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.inputs.force_training }}" == "true" ]; then
+            echo "✅ Forced training requested"
+            echo "data_changed=false" >> $GITHUB_OUTPUT
+            echo "should_train=true" >> $GITHUB_OUTPUT
+          else
+            echo "⏭️ No relevant changes - skipping training"
+            echo "data_changed=false" >> $GITHUB_OUTPUT
+            echo "should_train=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================
+  # Job 2: Pull Data with DVC
+  # ============================================
+  pull-data:
+    name: 📦 Pull Data (DVC)
+    runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.should_train == 'true'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 📦 Install DVC
+        run: |
+          pip install dvc dvc-s3 dvc-gdrive  # Add your remote type
+          dvc version
+
+      - name: 🔑 Configure DVC Remote
+        run: |
+          # Configure DVC remote credentials
+          # For S3:
+          # dvc remote modify --local myremote access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # dvc remote modify --local myremote secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          
+          # For Google Drive:
+          # echo '${{ secrets.GDRIVE_CREDENTIALS }}' > /tmp/gdrive-creds.json
+          # dvc remote modify --local myremote gdrive_service_account_json_file_path /tmp/gdrive-creds.json
+          
+          echo "DVC remote configured"
+
+      - name: 📥 Pull Data
+        run: |
+          echo "Pulling data from DVC remote..."
+          dvc pull -v || echo "No remote configured, using local data"
+          
+          # Verify data
+          echo "Data structure:"
+          ls -la data/ || echo "Data directory not found"
+
+      - name: 📤 Upload Data Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-data
+          path: data/
+          retention-days: 1
+
+  # ============================================
+  # Job 3: Train Model
+  # ============================================
+  train:
+    name: 🧠 Train Model
+    runs-on: ubuntu-latest  # Change to self-hosted for GPU
+    needs: [check-changes, pull-data]
+    if: needs.check-changes.outputs.should_train == 'true'
+    
+    outputs:
+      model_version: ${{ steps.train.outputs.model_version }}
+      run_id: ${{ steps.train.outputs.run_id }}
+      
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📥 Download Data
+        uses: actions/download-artifact@v4
+        with:
+          name: training-data
+          path: data/
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-train.txt
+
+      - name: 🔧 Setup MLflow
+        run: |
+          # If using remote MLflow server
+          if [ -n "${{ secrets.MLFLOW_TRACKING_URI }}" ]; then
+            echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> $GITHUB_ENV
+          else
+            # Use local MLflow
+            echo "MLFLOW_TRACKING_URI=file:./mlruns" >> $GITHUB_ENV
+          fi
+
+      - name: 🧠 Run Training
+        id: train
+        run: |
+          echo "🚀 Starting training..."
+          
+          # Create necessary directories
+          mkdir -p models/production mlruns metrics plots
+          
+          # Run training
+          cd $GITHUB_WORKSPACE
+          export PYTHONPATH=$GITHUB_WORKSPACE
+          
+          python src/train.py \
+            --model ${{ env.MODEL_TYPE }} \
+            --dataset data/raw/PlantVillage \
+            --config config.yaml
+          
+          # Get the run ID from MLflow
+          RUN_ID=$(ls -t mlruns/*/meta.yaml 2>/dev/null | head -1 | xargs dirname | xargs basename || echo "local-$(date +%Y%m%d%H%M%S)")
+          MODEL_VERSION="v$(date +%Y%m%d%H%M%S)"
+          
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "model_version=$MODEL_VERSION" >> $GITHUB_OUTPUT
+          
+          echo "✅ Training complete!"
+          echo "   Run ID: $RUN_ID"
+          echo "   Model Version: $MODEL_VERSION"
+
+      - name: 📊 Log Training Results
+        run: |
+          echo "📊 Training Results:"
+          cat metrics/train_metrics.json 2>/dev/null || echo "No metrics file found"
+          
+          echo ""
+          echo "📁 Model artifacts:"
+          ls -la models/production/ 2>/dev/null || echo "No production model yet"
+          ls -la models/checkpoints/ 2>/dev/null || echo "No checkpoints"
+
+      - name: 📤 Upload Model Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: |
+            models/
+            mlruns/
+            metrics/
+            plots/
+          retention-days: 30
+
+      - name: 📤 Upload MLflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-runs
+          path: mlruns/
+          retention-days: 30
+
+  # ============================================
+  # Job 4: Build API Image with New Model
+  # ============================================
+  build-api:
+    name: 🐳 Build API Image
+    runs-on: ubuntu-latest
+    needs: train
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📥 Download Trained Model
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: ./
+
+      - name: 📋 Prepare Model for API
+        run: |
+          echo "📋 Preparing model for API image..."
+          
+          # Find the best model checkpoint
+          BEST_MODEL=$(find models/checkpoints -name "*.ckpt" -type f 2>/dev/null | head -1)
+          
+          if [ -n "$BEST_MODEL" ]; then
+            echo "Found model: $BEST_MODEL"
+            mkdir -p models/production
+            cp "$BEST_MODEL" models/production/model.ckpt
+            echo "✅ Model copied to production"
+          else
+            echo "⚠️ No checkpoint found, checking for existing production model..."
+            ls -la models/production/ || echo "No production model"
+          fi
+          
+          # Verify
+          echo "Production model:"
+          ls -la models/production/
+
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔑 Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 📋 Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE_API }}
+          tags: |
+            type=raw,value=${{ needs.train.outputs.model_version }}
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 🏗️ Build and Push API Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.inference
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            MODEL_VERSION=${{ needs.train.outputs.model_version }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: 📝 Output Image Info
+        run: |
+          echo "✅ API Image built and pushed!"
+          echo "   Tags: ${{ steps.meta.outputs.tags }}"
+          echo "   Model Version: ${{ needs.train.outputs.model_version }}"
+
+  # ============================================
+  # Job 5: Deploy to Kubernetes (Optional)
+  # ============================================
+  deploy:
+    name: 🚀 Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: [train, build-api]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: 🔑 Configure Kubernetes
+        run: |
+          # Configure kubeconfig from secret
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: 📋 Update Deployment Manifest
+        run: |
+          # Update image tag in deployment
+          IMAGE_TAG="${{ env.DOCKER_IMAGE_API }}:${{ needs.train.outputs.model_version }}"
+          sed -i "s|image:.*plant-disease.*|image: $IMAGE_TAG|g" k8s/deployment.yaml
+          
+          # Add model version annotation
+          sed -i "s|model-version:.*|model-version: \"${{ needs.train.outputs.model_version }}\"|g" k8s/deployment.yaml
+          
+          echo "Updated deployment.yaml:"
+          cat k8s/deployment.yaml
+
+      - name: 🚀 Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/storage.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+          
+          # Wait for rollout
+          kubectl rollout status deployment/plant-disease-api -n mlops --timeout=300s
+
+      - name: 🧪 Verify Deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          kubectl get pods -n mlops
+          kubectl get svc -n mlops
+          
+          # Get API URL
+          API_URL=$(kubectl get svc plant-disease-api-service -n mlops -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "pending")
+          echo "API URL: http://$API_URL:8000"
+          
+          # Health check
+          if [ "$API_URL" != "pending" ]; then
+            sleep 10
+            curl -s "http://$API_URL:8000/health" || echo "Health check pending..."
+          fi
+
+  # ============================================
+  # Job 6: Notify Results
+  # ============================================
+  notify:
+    name: 📢 Notify Results
+    runs-on: ubuntu-latest
+    needs: [check-changes, train, build-api]
+    if: always()
+    
+    steps:
+      - name: 📢 Summary
+        run: |
+          echo "# 🌱 MLOps Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Data Check | ${{ needs.check-changes.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Training | ${{ needs.train.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Build | ${{ needs.build-api.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.train.result }}" == "success" ]; then
+            echo "## ✅ Training Completed" >> $GITHUB_STEP_SUMMARY
+            echo "- Model Version: \`${{ needs.train.outputs.model_version }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Run ID: \`${{ needs.train.outputs.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.build-api.result }}" == "success" ]; then
+            echo "## 🐳 API Image Ready" >> $GITHUB_STEP_SUMMARY
+            echo "- Image: \`${{ env.DOCKER_IMAGE_API }}:${{ needs.train.outputs.model_version }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
