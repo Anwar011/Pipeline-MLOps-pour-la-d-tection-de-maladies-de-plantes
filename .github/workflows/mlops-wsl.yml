@@ -43,7 +43,9 @@ jobs:
       - name: 🐍 Setup Python Environment
         run: |
           wsl python3 --version
-          wsl pip3 install -r requirements-train.txt
+          wsl python3 -m venv .venv
+          wsl .venv/bin/pip install --upgrade pip
+          wsl .venv/bin/pip install -r requirements-train.txt
 
       - name: 🚀 Start MLflow Server
         run: |
@@ -59,7 +61,7 @@ jobs:
           echo Starting training on WSL...
           wsl ls -la data/raw/PlantVillage
           wsl mkdir -p models/production mlruns metrics plots
-          wsl bash -c "export PYTHONPATH=$(wsl pwd) && export MLFLOW_TRACKING_URI=http://localhost:5000 && python3 src/train.py --model ${{ env.MODEL_TYPE }} --dataset data/raw/PlantVillage --config config.yaml"
+          wsl bash -c "export PYTHONPATH=$(wsl pwd) && export MLFLOW_TRACKING_URI=http://localhost:5000 && .venv/bin/python src/train.py --model ${{ env.MODEL_TYPE }} --dataset data/raw/PlantVillage --config config.yaml"
           for /f %%i in ('wsl date +%%Y%%m%%d%%H%%M%%S') do set MODEL_VERSION=v%%i
           echo model_version=%MODEL_VERSION% >> %GITHUB_OUTPUT%
           echo Training complete! Model: %MODEL_VERSION%
