@@ -207,12 +207,13 @@ class PlantDiseaseInferenceAPI:
                         {"class": cls_name, "confidence": prob.item()}
                     )
 
+            # Calculer le temps d'inférence
+            inference_time = time.time() - start_time
+
             # Logger les métriques
             self.prediction_confidence.observe(confidence)
             self.inference_latency.observe(inference_time)
             self.predictions_by_class.labels(class_name=class_name).inc()
-
-            inference_time = time.time() - start_time
 
             return {
                 "prediction": class_name,

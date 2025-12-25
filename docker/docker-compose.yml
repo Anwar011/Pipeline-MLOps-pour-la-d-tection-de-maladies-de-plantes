@@ -1,24 +1,30 @@
 services:
   # API de détection de maladies de plantes
-  # Run locally with: python3 scripts/run_api.py
-  # plant-disease-api:
-  #   build:
-  #     context: ..
-  #     dockerfile: docker/Dockerfile
-  #   ports:
-  #     - "8000:8000"
-  #   volumes:
-  #     - ../models:/app/models:ro
-  #     - ../data:/app/data:ro
-  #   environment:
-  #     - CUDA_VISIBLE_DEVICES=0
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 40s
+  plant-disease-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.inference
+    image: plant-disease-mlops:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../models:/app/models:ro
+      - ../data:/app/data:ro
+      - ../config.yaml:/app/config.yaml:ro
+    environment:
+      - CUDA_VISIBLE_DEVICES=-1
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+    depends_on:
+      - mlflow-server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - default
 
   # Serveur MLflow pour le suivi des expériences
   mlflow-server:

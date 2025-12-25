@@ -116,6 +116,26 @@ def train_model(model_type, dataset_path, config_path="config.yaml"):
         mlflow.log_param("dataset_path", dataset_path)
         mlflow.log_param("num_classes", num_classes)
         mlflow.log_param("class_names", str(class_names))
+        
+        # Logger les informations sur les données (cahier des charges: enregistrement des données)
+        try:
+            # Compter les images par classe
+            from pathlib import Path
+            dataset_path_obj = Path(dataset_path)
+            if dataset_path_obj.exists():
+                class_counts = {}
+                for class_dir in dataset_path_obj.iterdir():
+                    if class_dir.is_dir():
+                        image_count = len(list(class_dir.glob("*.jpg"))) + len(list(class_dir.glob("*.png")))
+                        class_counts[class_dir.name] = image_count
+                
+                mlflow.log_dict(class_counts, "data/class_counts.json")
+                total_images = sum(class_counts.values())
+                mlflow.log_param("total_images", total_images)
+                mlflow.log_param("data_version", str(dataset_path_obj.stat().st_mtime))
+                logger.info(f"📊 Données enregistrées dans MLflow: {total_images} images, {len(class_counts)} classes")
+        except Exception as e:
+            logger.warning(f"⚠️  Impossible d'enregistrer les détails des données: {e}")
 
         # Callbacks
         callbacks = get_training_callbacks(config_path)
